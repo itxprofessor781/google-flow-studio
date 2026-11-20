@@ -13,20 +13,28 @@ export default async function handler(req, res) {
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   async function callGeminiModel(modelName, prompt) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(apiKey)}`;
-    const apiRes = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: "application/json"
-        }
-      })
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 22000);
 
-    const apiData = await apiRes.json();
-    return { ok: apiRes.ok, status: apiRes.status, data: apiData };
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      const apiRes = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseMimeType: "application/json"
+          }
+        })
+      });
+
+      const apiData = await apiRes.json();
+      return { ok: apiRes.ok, status: apiRes.status, data: apiData };
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   try {
@@ -50,7 +58,7 @@ export default async function handler(req, res) {
     const safeMinutes = Math.max(1, Math.min(5, Number(targetMinutes) || 1));
 
     const prompt = `You are a creative director building a Google Flow-style multi-scene video and voiceover production timeline.
-User Idea: ${String(idea).trim()}
+User Idea: ${String(idea).trim().slice(0, 1200)}
 Visual Style: ${style}
 Target Video Length: ~${safeMinutes} minute(s)
 Number of Scenes: ${safeScenes}
@@ -85,13 +93,13 @@ Respond ONLY with valid JSON matching this schema:
 
     const modelsToTry = ["gemini-3.8-flash", "gemini-flash-latest"];
     let finalData = null;
-    let lastError = "High demand on model. Please try again shortly.";
+    let lastError = "Model is currently busy. Please try again.";
 
     for (const modelName of modelsToTry) {
       let attempt = await callGeminiModel(modelName, prompt);
 
       if (!attempt.ok && (attempt.status === 503 || attempt.status === 429)) {
-        await sleep(1200);
+        await sleep(600);
         attempt = await callGeminiModel(modelName, prompt);
       }
 
@@ -117,8 +125,9 @@ Respond ONLY with valid JSON matching this schema:
     const parsed = JSON.parse(cleaned);
     return res.status(200).json(parsed);
   } catch (err) {
-    return res.status(500).json({
-      error: err?.message || "Server error while generating timeline."
-    });
+    const msg = err?.name === "AbortError"
+      ? "Request took too long. Please try again."
+      : (err?.message || "Server error while generating timeline.");
+    return res.status(500).json({ error: msg });
   }
 }
