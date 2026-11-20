@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Google Flow Studio — Timeline & Voiceover Builder</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+    body { background: #0b0f17; color: #e5e7eb; padding: 18px; line-height: 1.5; }
+    .container { max-width: 920px; margin: 0 auto; }
+    .header { margin-bottom: 18px; }
+    .header h1 { font-size: 1.55rem; color: #ffffff; }
+    .header p { color: #9ca3af; font-size: 0.92rem; margin-top: 4px; }
+    .card { background: #131a26; border: 1px solid #243044; border-radius: 14px; padding: 16px; margin-bottom: 16px; }
+    label { display: block; font-size: 0.84rem; color: #cbd5e1; margin-bottom: 6px; font-weight: 600; }
+    textarea, select, input {
+      width: 100%; background: #0b0f17; color: #f9fafb; border: 1px solid #2c3a52;
+      border-radius: 10px; padding: 10px 12px; font-size: 0.94rem; margin-bottom: 12px;
+    }
+    textarea { min-height: 88px; resize: vertical; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    @media (max-width: 650px) { .grid-3 { grid-template-columns: 1fr; } }
+    button {
+      width: 100%; background: #2563eb; color: #fff; border: none; border-radius: 10px;
+      padding: 12px 16px; font-size: 0.98rem; font-weight: 600; cursor: pointer;
+    }
+    button:hover { background: #1d4ed8; }
+    button:disabled { background: #374151; cursor: not-allowed; }
+    .status { margin-top: 10px; font-size: 0.88rem; color: #93c5fd; }
+    .error { color: #f87171; }
+    .top-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; margin-bottom: 12px; }
+    .small-btn { width: auto; padding: 7px 12px; font-size: 0.82rem; background: #1f2937; border: 1px solid #374151; }
+    .small-btn:hover { background: #374151; }
+    .scene-card { background: #0e1420; border: 1px solid #223047; border-radius: 12px; padding: 14px; margin-top: 12px; }
+    .scene-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .badge { background: #1e3a8a; color: #bfdbfe; padding: 3px 10px; border-radius: 999px; font-size: 0.78rem; font-weight: 700; }
+    .vo-box {
+      background: #111b2e; border-left: 3px solid #38bdf8; border-radius: 8px;
+      padding: 10px; font-size: 0.9rem; color: #e0f2fe; margin: 8px 0;
+    }
+    .prompt-box {
+      background: #080c12; border: 1px dashed #334155; border-radius: 8px;
+      padding: 10px; font-size: 0.88rem; color: #f3f4f6; margin: 8px 0; white-space: pre-wrap;
+    }
+    .meta { font-size: 0.84rem; color: #9ca3af; margin-top: 5px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Google Flow Studio</h1>
+      <p>Multi-scene timeline, voiceover script & audio preview, and flow prompts (Free Tier).</p>
+    </div>
+
+    <div class="card">
+      <label for="idea">Story / Concept / Idea</label>
+      <textarea id="idea" placeholder="Example: A 3D cartoon street vendor's night market adventure with funny twists..."></textarea>
+
+      <div class="grid-3">
+        <div>
+          <label for="style">Visual Style</label>
+          <select id="style">
+            <option value="3D Cartoon Animation">3D Cartoon Animation</option>
+            <option value="85mm Photorealistic Cinematic">85mm Photorealistic Cinematic</option>
+            <option value="Business Documentary">Business Documentary</option>
+            <option value="Short-Form Story">Short-Form Story</option>
+          </select>
+        </div>
+        <div>
+          <label for="targetMinutes">Target Length (Minutes)</label>
+          <select id="targetMinutes">
+            <option value="1" selected>1 Minute (~60s)</option>
+            <option value="2">2 Minutes (~120s)</option>
+          </select>
+        </div>
+        <div>
+          <label for="scenesCount">Timeline Scenes</label>
+          <input id="scenesCount" type="number" min="3" max="12" value="8" />
+        </div>
+      </div>
+
+      <button id="generateBtn" onclick="generateTimeline()">Generate Flow Timeline</button>
+      <div id="status" class="status"></div>
+    </div>
+
+    <div id="output"></div>
+  </div>
+
+  <script>
+    let latestData = null;
+
+    async function generateTimeline() {
+      const idea = document.getElementById("idea").value.trim();
+      const style = document.getElementById("style").value;
+      const targetMinutes = Number(document.getElementById("targetMinutes").value) || 1;
+      const scenesCount = Number(document.getElementById("scenesCount").value) || 8;
+      const btn = document.getElementById("generateBtn");
+      const status = document.getElementById("status");
+      const output = document.getElementById("output");
+
+      if (!idea) {
+        status.innerHTML = '<span class="error">Pehle koi idea ya story likho bhai.</span>';
+        return;
+      }
+
+      stopVoice();
+      btn.disabled = true;
+      btn.textContent = "Generating Timeline...";
+      status.textContent = "Building multi-scene flow timeline & voiceover...";
+      output.innerHTML = "";
+
+      try {
+        const res = await fetch("/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ idea, style, targetMinutes, scenesCount })
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Something went wrong");
+
+        latestData = data;
+        status.textContent = "Timeline ready!";
+
+        let html = `
+          <div class="card">
+            <h2>${escapeHtml(data.projectTitle)}</h2>
+            <p class="meta">${escapeHtml(data.styleSummary)} • Est. Duration: ~${escapeHtml(data.totalEstimatedSeconds)}s</p>
+            <div class="top-actions">
+              <button class="small-btn" onclick="playFullVoiceover()">Play Full Voiceover</button>
+              <button class="small-btn" onclick="stopVoice()">Stop Voice</button>
+              <button class="small-btn" onclick="downloadScript()">Download Script (.txt)</button>
+            </div>
+        `;
+
+        (data.scenes || []).forEach((s) => {
+          const encodedPrompt = encodeURIComponent(s.flowPrompt || "");
+          const encodedVO = encodeURIComponent(s.voiceoverText || "");
+          html += `
+            <div class="scene-card">
+              <div class="scene-top">
+                <span class="badge">Scene ${s.sceneNumber} (${s.durationSec}s): ${escapeHtml(s.title)}</span>
+                <div style="display:flex; gap:6px;">
+                  <button class="small-btn" onclick="speakText('${encodedVO}')">Listen VO</button>
+                  <button class="small-btn" onclick="copyText('${encodedPrompt}', this)">Copy Prompt</button>
+                </div>
+              </div>
+              <div class="vo-box"><strong>Voiceover:</strong> ${escapeHtml(s.voiceoverText)}</div>
+              <div class="prompt-box">${escapeHtml(s.flowPrompt)}</div>
+              <div class="meta"><strong>Camera & Motion:</strong> ${escapeHtml(s.cameraAndMotion)}</div>
+              <div class="meta"><strong>Transition:</strong> ${escapeHtml(s.transitionNote)}</div>
+            </div>
+          `;
+        });
+
+        html += `</div>`;
+        output.innerHTML = html;
+      } catch (err) {
+        status.innerHTML = `<span class="error">${escapeHtml(err.message)}</span>`;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Generate Flow Timeline";
+      }
+    }
+
+    function speakText(encoded) {
+      if (!("speechSynthesis" in window)) {
+        alert("Browser voice synthesis not supported on this device.");
+        return;
+      }
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(decodeURIComponent(encoded));
+      window.speechSynthesis.speak(u);
+    }
+
+    function playFullVoiceover() {
+      if (!latestData || !latestData.scenes || !("speechSynthesis" in window)) return;
+      window.speechSynthesis.cancel();
+      latestData.scenes.forEach((s) => {
+        if (s.voiceoverText) {
+          const u = new SpeechSynthesisUtterance(s.voiceoverText);
+          window.speechSynthesis.speak(u);
+        }
+      });
+    }
+
+    function stopVoice() {
+      if ("speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+    }
+
+    function downloadScript() {
+      if (!latestData) return;
+      let txt = `${latestData.projectTitle}\n${latestData.styleSummary}\nEst. Duration: ~${latestData.totalEstimatedSeconds}s\n\n`;
+      (latestData.scenes || []).forEach((s) => {
+        txt += `--- Scene ${s.sceneNumber} (${s.durationSec}s): ${s.title} ---\n`;
+        txt += `Voiceover: ${s.voiceoverText}\n`;
+        txt += `Flow Prompt: ${s.flowPrompt}\n`;
+        txt += `Camera & Motion: ${s.cameraAndMotion}\n`;
+        txt += `Transition: ${s.transitionNote}\n\n`;
+      });
+      const blob = new Blob([txt], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "flow-timeline-script.txt";
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function copyText(encoded, btn) {
+      navigator.clipboard.writeText(decodeURIComponent(encoded)).then(() => {
+        const old = btn.textContent;
+        btn.textContent = "Copied!";
+        setTimeout(() => (btn.textContent = old), 1200);
+      });
+    }
+
+    function escapeHtml(str) {
+      return String(str || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+  </script>
+</body>
+</html>
