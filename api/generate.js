@@ -10,6 +10,25 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "GEMINI_API_KEY missing in Vercel Environment Variables." });
   }
 
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  async function callGeminiModel(modelName, prompt) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const apiRes = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: "application/json"
+        }
+      })
+    });
+
+    const apiData = await apiRes.json();
+    return { ok: apiRes.ok, status: apiRes.status, data: apiData };
+  }
+
   try {
     let body = req.body;
     if (typeof body === "string") {
@@ -64,28 +83,31 @@ Respond ONLY with valid JSON matching this schema:
   ]
 }`;
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const modelsToTry = ["gemini-3.8-flash", "gemini-flash-latest"];
+    let finalData = null;
+    let lastError = "High demand on model. Please try again shortly.";
 
-    const apiRes = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: "application/json"
-        }
-      })
-    });
+    for (const modelName of modelsToTry) {
+      let attempt = await callGeminiModel(modelName, prompt);
 
-    const apiData = await apiRes.json();
+      if (!attempt.ok && (attempt.status === 503 || attempt.status === 429)) {
+        await sleep(1200);
+        attempt = await callGeminiModel(modelName, prompt);
+      }
 
-    if (!apiRes.ok) {
-      return res.status(apiRes.status).json({
-        error: apiData?.error?.message || `Gemini API error (${apiRes.status})`
-      });
+      if (attempt.ok) {
+        finalData = attempt.data;
+        break;
+      }
+
+      lastError = attempt.data?.error?.message || `Gemini API error (${attempt.status})`;
     }
 
-    const rawText = apiData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    if (!finalData) {
+      return res.status(503).json({ error: lastError });
+    }
+
+    const rawText = finalData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
     const cleaned = rawText
       .replace(/^```json\s*/i, "")
       .replace(/^```\s*/i, "")
